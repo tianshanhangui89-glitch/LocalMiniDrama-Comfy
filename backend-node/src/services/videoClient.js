@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const aiConfigService = require('./aiConfigService');
+const localComfyH3Client = require('./localComfyH3Client');
 let sharp; try { sharp = require('sharp'); } catch (_) { sharp = null; }
 const { uploadLocalImageToProxy, uploadToImageProxy } = require('./uploadService');
 const imageClient = require('./imageClient');
@@ -33,6 +34,7 @@ function inferVideoProtocol(provider) {
   if (p === 'xai' || p === 'grok') return 'xai';
   if (p === 'agnes') return 'agnes';
   if (p === 'minimax_h3') return 'minimax_h3';
+  if (p === 'local_comfy_h3' || p === 'comfyui_h3') return 'local_comfy_h3';
   return 'openai';
 }
 
@@ -66,6 +68,7 @@ function resolveVideoProtocol(config, modelHint) {
   if ((!explicit || protocol === 'openai') && (provider === 'minimax_h3' || isMinimaxH3Model(modelCand))) {
     protocol = 'minimax_h3';
   }
+  if (provider === 'local_comfy_h3' || provider === 'comfyui_h3') protocol = 'local_comfy_h3';
   return protocol;
 }
 
@@ -3905,6 +3908,19 @@ async function callVideoApi(db, log, opts) {
       storage_local_path: opts.storage_local_path,
       video_gen_id: opts.video_gen_id,
     });
+  }
+
+  // MiniMax H3 Video Generation V2
+  if (protocol === 'local_comfy_h3') {
+    try {
+      return await localComfyH3Client.generate(config, {
+        prompt, duration: opts.duration, aspect_ratio, image_url: opts.image_url,
+        first_frame_url: opts.first_frame_url, last_frame_url: opts.last_frame_url, files_base_url: opts.files_base_url,
+        storage_local_path: opts.storage_local_path, video_gen_id: opts.video_gen_id,
+      }, log);
+    } catch (error) {
+      return { error: error.message };
+    }
   }
 
   // MiniMax H3 Video Generation V2

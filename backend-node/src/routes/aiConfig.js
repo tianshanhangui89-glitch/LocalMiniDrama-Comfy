@@ -106,10 +106,37 @@ function bulkUpdateKey(db, log, cfg) {
 function testConnection(log) {
   return async (req, res) => {
     const body = req.body || {};
-    if (!body.base_url || !body.api_key) {
-      return response.badRequest(res, '缺少 base_url 或 api_key');
+    const localComfyProtocols = ['local_comfy_h3', 'local_comfy_zimage'];
+    const localComfy = ['local_comfy_h3', 'comfyui_h3', 'local_comfy_zimage', 'comfyui_zimage'].includes(String(body.provider || '').toLowerCase()) ||
+      localComfyProtocols.includes(String(body.api_protocol || '').toLowerCase());
+    const localLlama = ['local_llama_qwen3', 'llama_cpp', 'local_llama'].includes(String(body.provider || '').toLowerCase());
+    if (!body.base_url) {
+      return response.badRequest(res, '缺少 base_url');
     }
     try {
+      if (localComfy) {
+        const baseUrl = String(body.base_url).replace(/\/$/, '');
+        const check = await fetch(`${baseUrl}/system_stats`);
+        if (!check.ok) throw new Error(`ComfyUI 返回 HTTP ${check.status}`);
+        const stats = await check.json();
+        return response.success(res, {
+          message: '本机 ComfyUI 连接成功',
+          device: stats.devices?.[0]?.name || 'unknown',
+        });
+      }
+      if (localLlama) {
+        const baseUrl = String(body.base_url).replace(/\/$/, '');
+        const check = await fetch(`${baseUrl}/models`);
+        if (!check.ok) throw new Error(`本机 Qwen 服务返回 HTTP ${check.status}`);
+        const data = await check.json();
+        return response.success(res, {
+          message: '本机 Qwen3 连接成功',
+          model: data.data?.[0]?.id || 'Qwen3-8B-Q5_K_M',
+        });
+      }
+      if (!body.api_key) {
+        return response.badRequest(res, '缺少 api_key');
+      }
       await aiConfigService.testConnection({
         base_url: body.base_url,
         api_key: body.api_key,

@@ -38,6 +38,11 @@ function routes(db, log) {
         let aspectRatio = null;
         if (body.aspect_ratio != null && String(body.aspect_ratio).trim() !== '') {
           aspectRatio = normalizeAspectRatioForApi(body.aspect_ratio);
+          // 21:9 is unsupported by several cloud providers, but is a valid
+          // high-resolution canvas for this deployment's local ComfyUI H3.
+          if (!aspectRatio && String(body.aspect_ratio).trim().replace(/：/g, ':') === '21:9') {
+            aspectRatio = '21:9';
+          }
         }
         if (!aspectRatio && dramaId) {
           try {

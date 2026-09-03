@@ -13,6 +13,62 @@ function createApp() {
   const { runMigrationsAndEnsure } = require('./db/migrate.js');
   runMigrationsAndEnsure(db);
 
+  // Fresh local deployments should work without a cloud-video key. Existing
+  // user-created video providers remain untouched; this only seeds H3 once.
+  const localH3 = db.prepare(
+    "SELECT id FROM ai_service_configs WHERE deleted_at IS NULL AND service_type = 'video' AND provider = 'local_comfy_h3' LIMIT 1"
+  ).get();
+  if (!localH3) {
+    const now = new Date().toISOString();
+    db.prepare("UPDATE ai_service_configs SET is_default = 0 WHERE deleted_at IS NULL AND service_type = 'video'").run();
+    db.prepare(
+      `INSERT INTO ai_service_configs (service_type, provider, api_protocol, name, base_url, api_key, model, default_model, endpoint, query_endpoint, priority, is_default, is_active, settings, created_at, updated_at)
+       VALUES ('video', 'local_comfy_h3', 'local_comfy_h3', '本机 ComfyUI · MiniMax H3', 'http://127.0.0.1:8188', '', ?, 'MiniMax-H3-Local', '', '', 100, 1, 1, ?, ?, ?)`
+    ).run(JSON.stringify(['MiniMax-H3-Local']), JSON.stringify({ timeout_seconds: 1800 }), now, now);
+    logger.info('Seeded local ComfyUI MiniMax H3 video provider');
+  }
+
+  const localZImage = db.prepare(
+    "SELECT id FROM ai_service_configs WHERE deleted_at IS NULL AND service_type = 'image' AND provider = 'local_comfy_zimage' LIMIT 1"
+  ).get();
+  if (!localZImage) {
+    const now = new Date().toISOString();
+    db.prepare("UPDATE ai_service_configs SET is_default = 0 WHERE deleted_at IS NULL AND service_type = 'image'").run();
+    db.prepare(
+      `INSERT INTO ai_service_configs (service_type, provider, api_protocol, name, base_url, api_key, model, default_model, endpoint, query_endpoint, priority, is_default, is_active, settings, created_at, updated_at)
+       VALUES ('image', 'local_comfy_zimage', 'local_comfy_zimage', '本机 ComfyUI · Z-Image-Turbo', 'http://127.0.0.1:8188', '', ?, 'Z-Image-Turbo-Local', '', '', 100, 1, 1, ?, ?, ?)`
+    ).run(JSON.stringify(['Z-Image-Turbo-Local']), JSON.stringify({ steps: 8, timeout_seconds: 1200 }), now, now);
+    logger.info('Seeded local ComfyUI Z-Image-Turbo image provider');
+  }
+
+  // Qwen3 is served locally by llama.cpp with an OpenAI-compatible endpoint.
+  // Keep this on CPU by default so video/image jobs retain the full RTX 4090.
+  const localQwen = db.prepare(
+    "SELECT id FROM ai_service_configs WHERE deleted_at IS NULL AND service_type = 'text' AND provider = 'local_llama_qwen3' LIMIT 1"
+  ).get();
+  if (!localQwen) {
+    const now = new Date().toISOString();
+    db.prepare("UPDATE ai_service_configs SET is_default = 0 WHERE deleted_at IS NULL AND service_type = 'text'").run();
+    db.prepare(
+      `INSERT INTO ai_service_configs (service_type, provider, api_protocol, name, base_url, api_key, model, default_model, endpoint, query_endpoint, priority, is_default, is_active, settings, created_at, updated_at)
+       VALUES ('text', 'local_llama_qwen3', 'openai', '本机 Qwen3-8B（Q5 量化）', 'http://127.0.0.1:11435/v1', '', ?, 'Qwen3-8B-Q5_K_M', '/chat/completions', '', 100, 1, 1, ?, ?, ?)`
+    ).run(JSON.stringify(['Qwen3-8B-Q5_K_M']), JSON.stringify({ context_length: 8192, local: true }), now, now);
+    logger.info('Seeded local Qwen3 text provider');
+  }
+
+  const localTts = db.prepare(
+    "SELECT id FROM ai_service_configs WHERE deleted_at IS NULL AND service_type = 'tts' AND provider = 'local_confucius4' LIMIT 1"
+  ).get();
+  if (!localTts) {
+    const now = new Date().toISOString();
+    db.prepare("UPDATE ai_service_configs SET is_default = 0 WHERE deleted_at IS NULL AND service_type = 'tts'").run();
+    db.prepare(
+      `INSERT INTO ai_service_configs (service_type, provider, api_protocol, name, base_url, api_key, model, default_model, endpoint, query_endpoint, priority, is_default, is_active, settings, created_at, updated_at)
+       VALUES ('tts', 'local_confucius4', 'local_confucius4', 'Confucius4-TTS（局域网音色克隆）', 'http://192.168.1.116:7860', '', ?, 'Confucius4-TTS', '', '', 100, 1, 1, ?, ?, ?)`
+    ).run(JSON.stringify(['Confucius4-TTS']), JSON.stringify({ language: '中文', diffusion_steps: 25 }), now, now);
+    logger.info('Seeded Confucius4-TTS LAN provider');
+  }
+
   // 厂商锁定模式：在迁移完成后同步 vendor_lock 配置
   const { applyVendorLock } = require('./services/aiConfigService');
   applyVendorLock(db, logger, config);

@@ -90,6 +90,7 @@ function getProxyExpireHours() {
  */
 function inferProtocol(provider, model) {
   const p = String(provider || '').toLowerCase();
+  if (p === 'local_comfy_zimage' || p === 'comfyui_zimage') return 'local_comfy_zimage';
   if (p === 'dashscope' || p === 'qwen_image') return 'dashscope';
   if (p === 'nano_banana') return 'nano_banana';
   if (p === 'gemini' || p === 'google') return 'gemini';
@@ -99,6 +100,79 @@ function inferProtocol(provider, model) {
   if (/^kling-/i.test(model || '')) return 'kling';
   if (p === 'agnes' || /agnes-image|apihub\.agnes-ai\.com/i.test(String(model || ''))) return 'agnes';
   return 'openai';
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function comfyImageSize(size) {
+  const found = String(size || '').replace(/\*/g, 'x').match(/(\d+)\s*x\s*(\d+)/i);
+  let width = found ? Number(found[1]) : 1344;
+  let height = found ? Number(found[2]) : 768;
+  // Keep the requested aspect ratio.  The former independent width/height
+  // clamp turned 21:9 into 1536x1264 before generation.  Scale by the longest
+  // edge instead; Z-Image still stays within a 1536px working canvas.
+  const scale = Math.min(1, 1536 / Math.max(width, height));
+  width = Math.max(256, Math.round((width * scale) / 16) * 16);
+  height = Math.max(256, Math.round((height * scale) / 16) * 16);
+  return { width, height };
+}
+
+/** Native ComfyUI Z-Image-Turbo workflow.  It deliberately uses only core
+ * nodes, so a ComfyUI upgrade does not depend on a third-party custom node. */
+async function callLocalComfyZImageApi(config, log, opts) {
+  const base = String(config.base_url || 'http://127.0.0.1:8188').replace(/\/$/, '');
+  const { width, height } = comfyImageSize(opts.size);
+  const seed = Math.floor(Math.random() * 0x7fffffff);
+  const prefix = `localminidrama/zimage_${opts.image_gen_id || Date.now()}`;
+  const workflow = {
+    '1': { class_type: 'UNETLoader', inputs: { unet_name: 'z_image_turbo_bf16.safetensors', weight_dtype: 'default' } },
+    '2': { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen_3_4b.safetensors', type: 'lumina2', device: 'default' } },
+    '3': { class_type: 'VAELoader', inputs: { vae_name: 'ae.safetensors' } },
+    '4': { class_type: 'CLIPTextEncode', inputs: { text: opts.prompt || '', clip: ['2', 0] } },
+    '5': { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['4', 0] } },
+    '6': { class_type: 'EmptySD3LatentImage', inputs: { width, height, batch_size: 1 } },
+    '7': { class_type: 'ModelSamplingAuraFlow', inputs: { model: ['1', 0], shift: 3 } },
+    '8': { class_type: 'KSampler', inputs: { model: ['7', 0], positive: ['4', 0], negative: ['5', 0], latent_image: ['6', 0], seed, steps: 8, cfg: 1, sampler_name: 'res_multistep', scheduler: 'simple', denoise: 1 } },
+    '9': { class_type: 'VAEDecode', inputs: { samples: ['8', 0], vae: ['3', 0] } },
+    '10': { class_type: 'SaveImage', inputs: { images: ['9', 0], filename_prefix: prefix } },
+  };
+  let queued;
+  try {
+    const response = await fetch(`${base}/prompt`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: workflow, client_id: `localminidrama-zimage-${Date.now()}` }),
+    });
+    queued = await response.json();
+    if (!response.ok || !queued.prompt_id) throw new Error(queued.error?.message || `ComfyUI HTTP ${response.status}`);
+  } catch (e) {
+    return { error: `本机 ComfyUI 生图提交失败: ${e.message}` };
+  }
+  log.info('Local ComfyUI Z-Image job queued', { image_gen_id: opts.image_gen_id, prompt_id: queued.prompt_id, width, height });
+  const deadline = Date.now() + 20 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await sleep(2000);
+    try {
+      const response = await fetch(`${base}/history/${queued.prompt_id}`);
+      if (!response.ok) continue;
+      const history = await response.json();
+      const job = history[queued.prompt_id];
+      if (!job) continue;
+      if (job.status?.status_str === 'error') return { error: job.status?.messages?.map((x) => x.join?.(' ') || String(x)).join('; ') || 'ComfyUI 生图执行失败' };
+      const outputs = job.outputs || {};
+      for (const output of Object.values(outputs)) {
+        const image = output?.images?.[0];
+        if (image?.filename) {
+          const params = new URLSearchParams({ filename: image.filename, subfolder: image.subfolder || '', type: image.type || 'output' });
+          return { image_url: `${base}/view?${params.toString()}` };
+        }
+      }
+    } catch (_) {
+      // A transient status request must not discard an in-flight ComfyUI job.
+    }
+  }
+  return { error: '本机 ComfyUI 生图超时（20 分钟）' };
 }
 
 /**
@@ -1461,6 +1535,13 @@ async function callImageApi(db, log, opts) {
   const autoNegativePrompt = (refCountForNeg > 1 || isVolcOrSeedream) ? ANTI_SPLIT_NEGATIVE_PROMPT : '';
   const userNegFragment = (user_negative_prompt && String(user_negative_prompt).trim()) || '';
   const mergedNegativePrompt = mergeNegativePromptFragments(autoNegativePrompt, userNegFragment);
+
+  if (protocol === 'local_comfy_zimage') {
+    if (Array.isArray(opts.reference_image_urls) && opts.reference_image_urls.filter(Boolean).length > 0) {
+      log.warn('Local Z-Image currently ignores reference images; install Fun-ControlNet for reference-guided generation.');
+    }
+    return callLocalComfyZImageApi(config, log, { ...opts, prompt: effectivePrompt, model, size, image_gen_id });
+  }
 
   if (protocol === 'dashscope') {
     return callDashScopeImageApi(config, log, {

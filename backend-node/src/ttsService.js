@@ -134,7 +134,7 @@ function synthesizeWithLocalEspeak(text, speed) {
 /** Confucius4-TTS is exposed as a local Gradio app.  Keep the Gradio wire
  * protocol here so the web client never needs direct access to the TTS host. */
 async function synthesizeWithConfucius4(text, referencePath, settings = {}, baseUrl = 'http://192.168.1.116:7860') {
-  if (!referencePath || !fs.existsSync(referencePath)) throw new Error(`请选择有效的 3–10 秒参考音频（未找到：${referencePath || '空路径'}）`);
+  if (!referencePath || !fs.existsSync(referencePath)) throw new Error('请选择有效的 3–10 秒参考音频');
   const base = baseUrl.replace(/\/+$/, '');
   const file = fs.readFileSync(referencePath);
   const ext = path.extname(referencePath).toLowerCase();
@@ -149,7 +149,7 @@ async function synthesizeWithConfucius4(text, referencePath, settings = {}, base
 
   const call = await fetch(`${base}/gradio_api/call/synthesize`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60000),
-    body: JSON.stringify({ data: [text, settings.language || '\u4e2d\u6587', { path: remotePath, meta: { _type: 'gradio.FileData' } }, Number(settings.temperature || 0.8), Number(settings.top_p || 0.8), Number(settings.diffusion_steps || 25)] }),
+    body: JSON.stringify({ data: [text, settings.language || '中文', { path: remotePath, meta: { _type: 'gradio.FileData' } }, Number(settings.temperature || 0.8), Number(settings.top_p || 0.8), Number(settings.diffusion_steps || 25)] }),
   });
   if (!call.ok) throw new Error(`Confucius4 提交合成失败（HTTP ${call.status}）`);
   const eventId = (await call.json())?.event_id;

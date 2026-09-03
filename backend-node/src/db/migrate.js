@@ -293,6 +293,17 @@ function ensureAllColumns(database) {
     { name: 'deleted_at',     type: 'TEXT' },
   ]);
 
+  // --- free_creations --- (independent text/audio history for the free workbench)
+  try {
+    database.exec(`CREATE TABLE IF NOT EXISTS free_creations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, prompt TEXT,
+      status TEXT NOT NULL DEFAULT 'pending', parameters TEXT, output_text TEXT,
+      output_path TEXT, error_msg TEXT, created_at TEXT, updated_at TEXT,
+      completed_at TEXT, deleted_at TEXT
+    )`);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_free_creations_created ON free_creations(created_at DESC)');
+  } catch (_) {}
+
   // --- async_tasks ---
   ensureColumns(database, 'async_tasks', [
     { name: 'type',         type: 'TEXT NOT NULL DEFAULT \'\'' },

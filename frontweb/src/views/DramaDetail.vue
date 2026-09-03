@@ -852,7 +852,7 @@ const nextEpisodeNumber = computed(() => (
     : 1
 ))
 
-const infoForm = reactive({ title: '', description: '', genre: '', style: '', customStylePrompt: '', aspect_ratio: '16:9' })
+const infoForm = reactive({ title: '', description: '', genre: '', style: '', customStylePrompt: '', aspect_ratio: '21:9' })
 
 function assetImageUrl(item) {
   if (!item) return ''

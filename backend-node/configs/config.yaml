@@ -24,16 +24,18 @@ storage:
 video:
   generation_timeout_minutes: 30
 ai:
-  default_text_provider: openai
-  default_image_provider: openai
-  default_video_provider: doubao
+  local_only: true
+  default_text_provider: local_llama_qwen3
+  default_image_provider: local_comfy_zimage
+  default_video_provider: local_comfy_h3
+  default_tts_provider: local_espeak_ng
 style:
   default_style: ''
   default_role_style: full body and face clearly visible, character centered, consistent facial features, high detail, masterpiece, best quality
   default_scene_style: wide establishing shot, highly detailed environment, sharp focus, rich atmosphere, masterpiece, best quality
   default_prop_style: object centered, clean simple background, studio lighting, sharp focus, high detail, masterpiece, best quality
   default_image_ratio: '16:9'
-  default_video_ratio: '16:9'
+  default_video_ratio: '21:9'
   default_prop_ratio: '1:1'
   default_image_size: 1024x1024
 vendor_lock:

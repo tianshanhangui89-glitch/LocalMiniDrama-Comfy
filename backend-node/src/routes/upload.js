@@ -1,4 +1,5 @@
 const path = require('path');
+const os = require('os');
 const multer = require('multer');
 const response = require('../response');
 const uploadService = require('../services/uploadService');
@@ -41,6 +42,16 @@ const audioUpload = multer({
     if (!allowedAudioTypes.includes(ct)) {
       return cb(new Error('只支持音频格式 (mp3, wav, m4a, ogg)'));
     }
+    cb(null, true);
+  },
+});
+// Reference recordings can be long. Store them on disk while uploading so a
+// large source file never has to be held in the Node.js heap.
+const audioUploadUnlimited = multer({
+  dest: path.join(os.tmpdir(), 'localminidrama-reference-audio'),
+  fileFilter: (req, file, cb) => {
+    const ct = file.mimetype || 'application/octet-stream';
+    if (!allowedAudioTypes.includes(ct)) return cb(new Error('只支持常见音频格式（mp3、wav、m4a、ogg、webm）'));
     cb(null, true);
   },
 });
@@ -100,5 +111,6 @@ module.exports = {
   upload,
   multerSingle: upload.single('file'),
   multerAudioSingle: audioUpload.single('file'),
+  multerAudioUnlimitedSingle: audioUploadUnlimited.single('file'),
   MAX_IMAGE_SIZE_MB: MAX_SIZE_MB,
 };

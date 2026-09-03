@@ -324,10 +324,14 @@ async function generateText(db, log, serviceType, userPrompt, systemPrompt, opti
     }
   }
 
+  const localNoThink = String(config.provider || '').toLowerCase() === 'local_llama_qwen3';
+  const effectiveSystemPrompt = localNoThink
+    ? `${systemPrompt || 'You are a helpful assistant.'}\n/no_think`
+    : systemPrompt;
   let body = {
     model,
     messages: [
-      ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+      ...(effectiveSystemPrompt ? [{ role: 'system', content: effectiveSystemPrompt }] : []),
       { role: 'user', content: userPrompt },
     ],
     temperature: Number(temperature),

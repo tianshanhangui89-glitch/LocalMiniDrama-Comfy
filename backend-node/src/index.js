@@ -215,8 +215,7 @@ function setupRouter(cfg, db, log) {
   // ---------- upload ----------
   r.post('/upload/image', uploadModule.multerSingle, uploadHandlers.uploadImage);
   r.get('/free/voices', freeCreate.listVoices);
-  r.post('/free/voice-reference', uploadModule.multerAudioUnlimitedSingle, freeCreate.uploadVoice);
-  r.post('/free/voice-reference/trim', freeCreate.trimVoice);
+  r.post('/free/voice-reference', uploadModule.multerAudioSingle, freeCreate.uploadVoice);
 
   // ---------- episodes ----------
   // 注意：drama.generateStoryboard 已处理所有逻辑（包括参数解析），这里统一使用 drama 模块的实现

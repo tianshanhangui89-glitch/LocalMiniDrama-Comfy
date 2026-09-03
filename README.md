@@ -23,6 +23,47 @@
 
 ---
 
+## Local AI stack for this deployment
+
+This repository is deployed as an all-local/LAN video-creation stack. Future
+agents and maintainers should keep these services local and must not replace
+them with paid cloud providers unless explicitly requested.
+
+| Capability | AI config provider | Base URL | Model | Notes |
+| --- | --- | --- | --- | --- |
+| Voice cloning / TTS | `local_confucius4` | `http://192.168.1.116:7860` | `Confucius4-TTS` | LAN service. A 3–10 second reference voice is recommended; the inference service rejects references longer than 15 seconds. |
+| Text generation | `local_llama_qwen3` | `http://127.0.0.1:11435/v1` | `Qwen3-8B-Q5_K_M` | llama.cpp OpenAI-compatible server on the application host. |
+| Text-to-image | `local_comfy_zimage` | `http://127.0.0.1:8188` | `Z-Image-Turbo-Local` | Native ComfyUI Z-Image-Turbo workflow. |
+| Text/image-to-video | `local_comfy_h3` | `http://127.0.0.1:8188` | `MiniMax-H3-Local` | Native ComfyUI MiniMax H3 workflow. |
+
+### Operating rules for agents
+
+- The application runs on `192.168.1.110`; the web UI is `http://192.168.1.110:5679` and ComfyUI is `http://192.168.1.110:8188`.
+- Confucius4-TTS runs on the separate LAN host `192.168.1.116:7860`. It is not a cloud API and needs no API key.
+- Start the backend with `LOCAL_ONLY=1`. This hides cloud providers in the AI configuration page and keeps generation on the local stack.
+- Do not store API keys for the four providers above. Their `api_key` fields must remain empty.
+- Use `127.0.0.1` for Qwen and ComfyUI from the backend host. Do not replace those URLs with the LAN address unless the process topology changes.
+- Free creation history and generated media are stored locally in SQLite and `backend-node/data/storage/`.
+- The active server copy is `/home/dev/ai-video/LocalMiniDrama-Comfy`. Preserve unrelated user changes and do not reset the worktree.
+
+### Backend start command
+
+```bash
+cd /home/dev/ai-video/LocalMiniDrama-Comfy/backend-node
+LOCAL_ONLY=1 WEB_DIST_PATH=/home/dev/ai-video/LocalMiniDrama-Comfy/frontweb/dist \
+  node src/server.js
+```
+
+### Local configuration verification
+
+Open **AI 配置** in the application. The four configurations above should be
+active and default for their respective service types. A local provider test
+does not require `base_url`/`api_key` fields beyond the URLs listed in the
+table. If text/image/video generation fails, check the corresponding local
+process first rather than adding a cloud provider.
+
+---
+
 <table>
 <tr>
 <td width="25%" align="center"><b>🔒 本地优先</b><br/>SQLite + 本地文件，素材不上云</td>
@@ -59,8 +100,6 @@
 - [AI 服务商](#-ai-服务商支持)
 - [项目架构](#-项目架构)
 - [后续计划](#-后续计划-roadmap)
-- [参与贡献](#-参与贡献)
-- [联系社区](#-联系--社区)
 
 ---
 
@@ -173,20 +212,7 @@
 
 ## 🚀 快速开始
 
-### 方式一：下载 exe（推荐）
-
-前往 **[Releases 下载页](https://github.com/xuanyustudio/LocalMiniDrama/releases)**：
-
-| 版本 | 说明 | 适合 |
-|------|------|------|
-| `本地短剧助手 x.x.x.exe` | 标准版，**含示例项目** | 新手入门 |
-| `本地短剧助手-Lite-x.x.x.exe` | Lite 版，体积更小 | 熟悉流程后 |
-
-双击运行 → 「AI 配置」填入 API Key → 开始创作。
-
-> 首次运行配置：`%APPDATA%\LocalMiniDrama\backend\configs\config.yaml`
-
-### 方式二：源码开发
+### 源码开发
 
 > Node.js ≥ 18
 
@@ -282,52 +308,6 @@ LocalMiniDrama/
 
 ---
 
-## 🤝 参与贡献
-
-- 🐛 [报告 Bug](https://github.com/xuanyustudio/LocalMiniDrama/issues/new)
-- 💡 [功能建议](https://github.com/xuanyustudio/LocalMiniDrama/issues/new)
-- 🔧 Fork → PR
-- ⭐ **Star** 帮助更多人发现本项目
-
-**GitHub 仓库建议 Topics**（在仓库 Settings → Topics 添加，便于搜索）：  
-`ai-video` `short-drama` `storyboard` `vue3` `electron` `local-first` `seedance` `comic-drama`
-
----
-
-<details>
-<summary><b>☕ 一杯咖啡的鼓励</b></summary>
-
-项目完全开源、无订阅。若对你有帮助，欢迎随缘打赏（自愿，不影响 Issue/PR 处理）：
-
-<table>
-  <tr>
-    <td align="center"><img src="项目截图/weixinpay.jpg" alt="微信赞赏码" width="200"/><br/><sub>微信支付</sub></td>
-    <td align="center"><img src="项目截图/ali.jpg" alt="支付宝收款码" width="200"/><br/><sub>支付宝</sub></td>
-  </tr>
-</table>
-
-</details>
-
----
-
-## 💬 联系 & 社区
-
-[作者故事 & 碎碎念](docs/story.md) · 微信交流 / 用户群（二维码见仓库 `项目截图/` 目录）
-
-> 群二维码约 7 天有效，过期请加作者微信拉群。
-
----
-
 ## 📄 License
 
 [MIT](LICENSE)
-
----
-
-<div align="center">
-
-**如果这个项目对你有帮助，请点 ⭐ Star —— 这是对作者最大的鼓励！**
-
-[⬇️ 立即下载](https://github.com/xuanyustudio/LocalMiniDrama/releases) · [📖 快速开始文档](docs/quickstart.md) · [🗺 画布文档](docs/plans/2026-06-15-drama-canvas-workflow-plan.md)
-
-</div>

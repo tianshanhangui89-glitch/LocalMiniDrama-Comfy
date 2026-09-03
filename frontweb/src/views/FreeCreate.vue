@@ -1,586 +1,96 @@
 <template>
-  <div class="free-create-page">
-    <div class="page-header">
-      <div class="header-left">
-        <el-button text @click="$router.back()">
-          <el-icon><ArrowLeft /></el-icon>
-          返回
-        </el-button>
-        <h2 class="page-title">自由创作</h2>
+  <main class="studio">
+    <header class="topbar">
+      <div class="brand"><span class="brand-dot">✦</span><span>自由创作</span><small>LOCAL STUDIO</small></div>
+      <div class="top-actions"><el-button text @click="loadHistory">刷新历史</el-button><el-button text @click="$router.back()">返回项目</el-button></div>
+    </header>
+
+    <section v-if="!category" class="landing">
+      <div class="hero"><p class="eyebrow">LOCAL AI CREATIVE SUITE</p><h1>从一个想法开始，<em>单独完成</em>每一步。</h1><p>文字、画面、声音、视频均由本机模型生成，作品和参数自动进入本地数据库。</p></div>
+      <div class="category-grid">
+        <button v-for="item in categories" :key="item.id" class="category-card" :class="item.id" @click="selectCategory(item.id)">
+          <span class="card-icon">{{ item.icon }}</span><span class="card-arrow">↗</span><h2>{{ item.title }}</h2><p>{{ item.description }}</p><small>{{ item.detail }}</small>
+        </button>
       </div>
-      <p class="page-desc">不绑定剧集，直接输入文字生成图片或视频</p>
-    </div>
+      <section class="recent-strip"><div><p class="eyebrow">DATABASE</p><h3>最近创作</h3></div><div class="recent-list"><button v-for="item in history.slice(0, 4)" :key="`${item.type}-${item.id}`" @click="selectCategory(item.type)"><b>{{ typeLabel(item.type) }}</b><span>{{ item.prompt }}</span></button><p v-if="!history.length">还没有记录，开始第一条创作吧。</p></div></section>
+    </section>
 
-    <div class="create-layout">
-      <!-- 左侧：输入面板 -->
-      <div class="input-panel">
-        <el-tabs v-model="mode" class="mode-tabs">
-          <el-tab-pane label="🎨 生成图片" name="image" />
-          <el-tab-pane label="🎬 生成视频" name="video" />
-        </el-tabs>
+    <section v-else class="workspace-shell">
+      <aside class="mode-sidebar">
+        <div class="sidebar-title"><span>创作模式</span><small>LOCAL TOOLS</small></div>
+        <button v-for="item in categories" :key="item.id" class="side-mode" :class="{ active: category === item.id }" @click="selectCategory(item.id)"><b>{{ item.icon }}</b><span>{{ item.title }}</span><i>›</i></button>
+        <div class="sidebar-foot">● 本机模型<br/>● SQLite 历史库</div>
+      </aside>
+      <div class="workspace">
+        <div class="workspace-head"><div><p class="eyebrow">{{ activeCategory.detail }}</p><h1>{{ activeCategory.title }}</h1></div><div class="head-spacer" /></div>
+        <div class="workspace-grid">
+        <section class="editor-card">
+          <div class="editor-title"><span>{{ activeCategory.icon }}</span><div><h2>{{ activeCategory.title }}</h2><p>{{ activeCategory.description }}</p></div></div>
+          <label>{{ category === 'audio' ? '配音文本' : category === 'text' ? '创作要求' : '提示词' }} <i>*</i></label>
+          <el-input v-model="prompt" type="textarea" :rows="category === 'text' ? 10 : 6" :placeholder="placeholder" />
+          <template v-if="category === 'video'">
+            <div class="mode-row"><button v-for="m in videoModes" :key="m.id" :class="{ selected: videoMode === m.id }" @click="videoMode = m.id">{{ m.name }}</button></div>
+            <div v-if="videoMode !== 't2v'" class="upload-grid"><UploadBox title="首帧参考图" :url="firstPreview" @change="setFirst" @clear="clearFirst" /><UploadBox v-if="videoMode === 'f2v'" title="尾帧参考图" :url="lastPreview" @change="setLast" @clear="clearLast" /></div>
+          </template>
+          <template v-if="category === 'image' || category === 'video'"><div class="two-col"><div><label>画幅</label><el-select v-model="aspect"><el-option label="21:9 超宽银幕" value="21:9"/><el-option label="16:9 横屏" value="16:9"/><el-option label="9:16 竖屏" value="9:16"/><el-option label="1:1 方形" value="1:1"/></el-select></div><div v-if="category === 'video'"><label>时长</label><el-select v-model="duration"><el-option v-for="n in [3,5,8,10]" :key="n" :label="`${n} 秒`" :value="n"/></el-select></div></div><label>风格（可选）</label><el-input v-model="style" placeholder="如：电影感、国风、动漫、写实" /></template>
+          <template v-if="category === 'audio'"><div class="voice-head"><label>参考音频 <i>*</i></label><span class="voice-status">Confucius4 · Voice Clone</span></div><div class="voice-tabs"><button :class="{active:voiceTab==='preset'}" @click="voiceTab='preset'">预设音色</button><button :class="{active:voiceTab==='custom'}" @click="voiceTab='custom'">自定义音色</button></div><div v-if="voiceTab==='preset'" class="voice-tab-body"><p class="voice-tip">选择一个已处理好的 3–10 秒参考音色，可直接用于克隆。</p><div class="voice-grid"><button v-for="voice in presetVoices" :key="voice.id" class="voice-card" :class="{ selected: selectedVoice === voice.path }" @click="selectedVoice = voice.path"><b>预设音色</b><span>{{ voice.label }}</span><i v-if="selectedVoice === voice.path">✓</i></button><div v-if="!presetVoices.length" class="voice-empty">正在读取预设音色…</div></div></div><div v-else class="voice-tab-body"><p class="voice-tip">原始文件不限制大小。上传后可完整试听，截取任意 ≤15 秒片段才能作为克隆参考。</p><div v-if="!rawVoice" class="audio-dropzone" :class="{uploading:voiceUploading}" @click="pickVoice" @dragover.prevent @drop.prevent="dropVoice"><div class="upload-mark">⇧</div><b>{{ voiceUploading ? '正在上传音频…' : '将音频拖放到此处' }}</b><span>- 或 -</span><strong>点击上传</strong><small>mp3 / wav / m4a / ogg / webm · 原始文件不限大小</small></div><div v-else class="audio-container"><button class="audio-close" @click="clearRawVoice">×</button><div class="audio-label">♫　参考音频（必填）</div><div class="waveform"></div><div class="audio-time"><span>0:00</span><span>{{ rawDuration ? rawDuration.toFixed(1)+' 秒' : '读取时长中…' }}</span></div><audio :src="rawVoice.url" controls/><div class="trim-panel"><div class="trim-row"><label>截取开始位置 {{ trimStart.toFixed(1) }} 秒</label><el-slider v-model="trimStart" :min="0" :max="Math.max(0, rawDuration - trimDuration)" :step="0.1" show-input /></div><div class="trim-row"><label>克隆片段 {{ trimDuration.toFixed(1) }} 秒 <i>（最多 15 秒）</i></label><el-slider v-model="trimDuration" :min="1" :max="Math.min(15, Math.max(1, rawDuration || 15))" :step="0.1" show-input /></div><button class="make-clip" :disabled="clipping" @click="makeClip">{{ clipping ? '正在裁剪…' : '截取并试听这个片段' }}</button><audio v-if="clipPreview" class="clip-preview" :src="clipPreview" controls/></div></div><div v-if="customVoices.length" class="saved-voices"><small>已保存的自定义音色</small><div class="voice-grid"><button v-for="voice in customVoices" :key="voice.id" class="voice-card" :class="{ selected: selectedVoice === voice.path }" @click="selectedVoice = voice.path"><b>我的音色</b><span>{{ voice.label }}</span><i v-if="selectedVoice === voice.path">✓</i></button></div></div></div><div v-if="selectedVoiceUrl" class="selected-audio"><span>当前使用</span><audio :src="selectedVoiceUrl" controls/></div><details class="advanced-panel"><summary>高级参数 <span>▼</span></summary><div class="audio-advanced"><label>语言</label><el-select v-model="audioLanguage"><el-option label="中文" value="中文"/><el-option label="English" value="English"/><el-option label="日本語" value="日本語"/></el-select><label>Temperature {{ temperature.toFixed(1) }}</label><el-slider v-model="temperature" :min="0.1" :max="1.5" :step="0.1" show-input /><label>Top-p {{ topP.toFixed(1) }}</label><el-slider v-model="topP" :min="0.1" :max="1" :step="0.1" show-input /><label>扩散步数</label><el-slider v-model="diffusionSteps" :min="10" :max="50" :step="1" show-input /></div></details></template>
+          <el-button type="primary" size="large" class="run" :loading="running" :disabled="!canRun" @click="run">{{ running ? '正在处理…' : `生成${activeCategory.title}` }} <span>→</span></el-button>
+          <p class="local-note">● 本地执行 · 自动保存到 SQLite</p>
+        </section>
 
-        <div class="form-section">
-          <div class="form-label">提示词 <span class="required">*</span></div>
-          <el-input
-            v-model="prompt"
-            type="textarea"
-            :rows="5"
-            placeholder="描述你想要生成的画面内容..."
-            class="prompt-input"
-          />
-        </div>
-
-        <div v-if="mode === 'video'" class="form-section">
-          <div class="form-label">参考图（可选）</div>
-          <div class="ref-image-zone" @click="triggerRefImageUpload" @dragover.prevent @drop.prevent="onRefImageDrop">
-            <template v-if="refImageDataUrl">
-              <img :src="refImageDataUrl" class="ref-preview" />
-              <div class="ref-actions">
-                <el-button size="small" type="danger" plain @click.stop="clearRefImage">移除</el-button>
-              </div>
-            </template>
-            <template v-else>
-              <el-icon class="upload-icon"><Picture /></el-icon>
-              <div class="upload-tip">点击或拖拽上传参考图</div>
-            </template>
-          </div>
-          <input ref="refImageInput" type="file" accept="image/*" style="display:none" @change="onRefImageChange" />
-        </div>
-
-        <div class="form-section form-row">
-          <div class="form-item">
-            <div class="form-label">风格</div>
-            <el-input v-model="style" placeholder="例如: cinematic, anime..." />
-          </div>
-          <div v-if="mode === 'image'" class="form-item">
-            <div class="form-label">比例</div>
-            <el-select v-model="aspectRatio">
-              <el-option label="16:9" value="16:9" />
-              <el-option label="9:16" value="9:16" />
-              <el-option label="1:1" value="1:1" />
-              <el-option label="4:3" value="4:3" />
-            </el-select>
-          </div>
-          <div v-if="mode === 'video'" class="form-item">
-            <div class="form-label">时长</div>
-            <el-select v-model="duration">
-              <el-option label="3秒" :value="3" />
-              <el-option label="5秒" :value="5" />
-              <el-option label="8秒" :value="8" />
-              <el-option label="10秒" :value="10" />
-            </el-select>
-          </div>
-        </div>
-
-        <el-button
-          type="primary"
-          size="large"
-          :loading="generating"
-          :disabled="!prompt.trim()"
-          class="generate-btn"
-          @click="generate"
-        >
-          {{ generating ? '生成中...' : (mode === 'image' ? '生成图片' : '生成视频') }}
-        </el-button>
-      </div>
-
-      <!-- 右侧：结果展示 -->
-      <div class="result-panel">
-        <div class="result-header">
-          <span class="result-title">生成结果</span>
-          <el-button v-if="results.length > 0" size="small" plain @click="clearResults">清空</el-button>
-        </div>
-
-        <div v-if="results.length === 0 && !generating" class="empty-result">
-          <el-icon class="empty-icon"><MagicStick /></el-icon>
-          <p>生成的内容将显示在这里</p>
-        </div>
-
-        <div v-if="generating" class="generating-tip">
-          <el-icon class="is-loading"><Loading /></el-icon>
-          <span>正在生成，请稍候...</span>
-        </div>
-
-        <div class="result-grid">
-          <div v-for="(item, idx) in results" :key="idx" class="result-item">
-            <div class="result-media">
-              <video
-                v-if="item.type === 'video' && item.url"
-                :src="item.url"
-                controls
-                class="result-video"
-                loop
-              />
-              <img
-                v-else-if="item.type === 'image' && item.url"
-                :src="item.url"
-                class="result-image"
-                @click="previewUrl = item.url"
-              />
-              <div v-else-if="item.status === 'pending' || item.status === 'processing'" class="media-loading">
-                <el-icon class="is-loading"><Loading /></el-icon>
-                <span>{{ item.status === 'processing' ? '生成中...' : '排队中...' }}</span>
-              </div>
-              <div v-else-if="item.status === 'failed'" class="media-error">
-                <el-icon><CircleClose /></el-icon>
-                <span>{{ item.error || '生成失败' }}</span>
-              </div>
-            </div>
-            <div class="result-meta">
-              <span class="result-prompt">{{ item.prompt }}</span>
-              <div class="result-actions">
-                <el-button v-if="item.url" size="small" plain @click="downloadItem(item)">下载</el-button>
-              </div>
-            </div>
-          </div>
+        <section class="history-card"><div class="history-head"><div><p class="eyebrow">DATABASE HISTORY</p><h2>创作历史</h2></div><el-select v-model="historyFilter" size="small"><el-option label="全部" value="all"/><el-option v-for="c in categories" :key="c.id" :label="c.title" :value="c.id"/></el-select></div>
+          <div class="history-list"><article v-for="item in filteredHistory" :key="`${item.type}-${item.id}`" class="history-item"><div class="item-top"><b :class="item.type">{{ typeLabel(item.type) }}</b><time>{{ formatTime(item.created_at) }}</time></div><p class="item-prompt">{{ item.prompt }}</p><pre v-if="item.type === 'text' && item.output_text">{{ item.output_text }}</pre><audio v-else-if="item.type === 'audio' && item.url" :src="item.url" controls/><img v-else-if="item.type === 'image' && item.url" :src="item.url" @click="preview = item.url"/><video v-else-if="item.type === 'video' && item.url" :src="item.url" controls/><div v-else class="item-status" :class="item.status">{{ item.status === 'failed' ? item.error_msg || '生成失败' : item.status === 'completed' ? '已完成' : '处理中…' }}</div><div v-if="item.output_text || item.url" class="item-actions"><el-button v-if="item.output_text" text size="small" @click="copyText(item.output_text)">复制文本</el-button><el-button v-if="item.url" text size="small" @click="download(item)">下载</el-button></div></article><div v-if="!filteredHistory.length" class="empty">这个分类还没有创作记录。</div></div>
+        </section>
         </div>
       </div>
-    </div>
-
-    <!-- 图片预览 -->
-    <div v-if="previewUrl" class="image-preview-overlay" @click="previewUrl = null">
-      <img :src="previewUrl" class="preview-img" @click.stop />
-    </div>
-  </div>
+    </section>
+    <div v-if="preview" class="lightbox" @click="preview = ''"><button class="lightbox-close" aria-label="关闭预览" @click.stop="preview = ''">×</button><img :src="preview" @click.stop /></div>
+  </main>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { ArrowLeft, Picture, MagicStick, Loading, CircleClose } from '@element-plus/icons-vue'
+import { computed, defineComponent, h, ref, onMounted, nextTick, render, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { freeCreateAPI } from '@/api/freeCreate'
 import { imagesAPI } from '@/api/images'
 import { videosAPI } from '@/api/videos'
 import { uploadAPI } from '@/api/upload'
-import { generationSettingsAPI } from '@/api/prompts'
+import { taskAPI } from '@/api/task'
+import CustomAudioEditor from '@/components/CustomAudioEditor.vue'
 
-const mode = ref('image')
-const prompt = ref('')
-const style = ref('')
-const aspectRatio = ref('16:9')
-const duration = ref(5)
-const generating = ref(false)
-const results = ref([])
-const previewUrl = ref(null)
-const refImageDataUrl = ref(null)
-const refImageLocalPath = ref(null)
-const refImageInput = ref(null)
-/** 与后端视频异步超时一致（分钟 → 毫秒） */
-const videoPollMaxMs = ref(30 * 60 * 1000)
-
-onMounted(async () => {
-  try {
-    const res = await generationSettingsAPI.get()
-    const m = Math.max(1, Number(res?.video_generation_timeout_minutes) || 30)
-    videoPollMaxMs.value = m * 60 * 1000
-  } catch (_) {}
-})
-
-function triggerRefImageUpload() {
-  refImageInput.value?.click()
-}
-
-function clearRefImage() {
-  refImageDataUrl.value = null
-  refImageLocalPath.value = null
-}
-
-async function onRefImageChange(e) {
-  const file = e.target.files?.[0]
-  if (!file) return
-  processRefImageFile(file)
-  e.target.value = ''
-}
-
-function onRefImageDrop(e) {
-  const file = e.dataTransfer?.files?.[0]
-  if (file && file.type.startsWith('image/')) processRefImageFile(file)
-}
-
-async function processRefImageFile(file) {
-  const reader = new FileReader()
-  reader.onload = async (ev) => {
-    refImageDataUrl.value = ev.target.result
-    try {
-      const res = await uploadAPI.uploadImage(file)
-      refImageLocalPath.value = res?.local_path || null
-    } catch (_) {}
-  }
-  reader.readAsDataURL(file)
-}
-
-function clearResults() {
-  results.value = []
-}
-
-function downloadItem(item) {
-  if (!item.url) return
-  const a = document.createElement('a')
-  a.href = item.url
-  a.download = `free_create_${Date.now()}.${item.type === 'video' ? 'mp4' : 'jpg'}`
-  a.click()
-}
-
-async function generate() {
-  if (!prompt.value.trim()) return
-  generating.value = true
-  const newItem = {
-    type: mode.value,
-    prompt: prompt.value,
-    style: style.value,
-    status: 'processing',
-    url: null,
-    error: null,
-  }
-  results.value.unshift(newItem)
-  try {
-    if (mode.value === 'image') {
-      const res = await imagesAPI.create({
-        prompt: prompt.value,
-        style: style.value || undefined,
-        aspect_ratio: aspectRatio.value,
-      })
-      if (res?.task_id) {
-        await pollImageTask(res.task_id, newItem)
-      } else if (res?.image_url || res?.local_path) {
-        newItem.url = res.image_url || ('/static/' + res.local_path)
-        newItem.status = 'completed'
-      }
-    } else {
-      const body = {
-        prompt: prompt.value,
-        style: style.value || undefined,
-        aspect_ratio: aspectRatio.value,
-        duration: duration.value,
-      }
-      if (refImageLocalPath.value) {
-        body.first_frame_url = refImageLocalPath.value
-        body.image_url = '/static/' + refImageLocalPath.value
-      }
-      const res = await videosAPI.create(body)
-      if (res?.task_id) {
-        await pollVideoTask(res.task_id, newItem)
-      } else {
-        newItem.status = 'failed'
-        newItem.error = '提交失败'
-      }
-    }
-  } catch (e) {
-    newItem.status = 'failed'
-    newItem.error = e.message || '生成失败'
-    ElMessage.error(newItem.error)
-  } finally {
-    generating.value = false
-  }
-}
-
-async function pollImageTask(taskId, item, maxMs = 180000) {
-  const start = Date.now()
-  while (Date.now() - start < maxMs) {
-    await new Promise((r) => setTimeout(r, 3000))
-    try {
-      const res = await imagesAPI.getTask ? imagesAPI.getTask(taskId) : null
-      if (!res) break
-      if (res.status === 'completed' && res.result) {
-        const r = res.result
-        item.url = r.image_url ? r.image_url : (r.local_path ? '/static/' + r.local_path : null)
-        item.status = 'completed'
-        return
-      }
-      if (res.status === 'failed') {
-        item.status = 'failed'
-        item.error = res.error || '生成失败'
-        return
-      }
-    } catch (_) {}
-  }
-  item.status = 'failed'
-  item.error = '超时'
-}
-
-async function pollVideoTask(taskId, item) {
-  const maxMs = videoPollMaxMs.value
-  const start = Date.now()
-  const { taskAPI } = await import('@/api/task')
-  while (Date.now() - start < maxMs) {
-    await new Promise((r) => setTimeout(r, 4000))
-    try {
-      const res = await taskAPI.get(taskId)
-      if (res?.status === 'completed' && res?.result) {
-        const r = res.result
-        const vgId = r.video_generation_id
-        if (vgId) {
-          const vRes = await videosAPI.get(vgId)
-          item.url = vRes?.local_path ? '/static/' + vRes.local_path : vRes?.video_url
-        }
-        item.status = 'completed'
-        return
-      }
-      if (res?.status === 'failed') {
-        item.status = 'failed'
-        item.error = res.error || '生成失败'
-        return
-      }
-    } catch (_) {}
-  }
-  item.status = 'failed'
-  item.error = '超时'
-}
+const categories = [{ id: 'text', icon: '✎', title: '文本创作', description: '剧本、分镜、旁白与提示词', detail: 'QWEN3 · LOCAL LLM' }, { id: 'image', icon: '◈', title: '图片生成', description: '一句描述生成角色、场景和海报', detail: 'Z-IMAGE TURBO · COMFYUI' }, { id: 'audio', icon: '◌', title: '克隆配音', description: '使用预设或上传参考人声，零样本克隆', detail: 'CONFUCIUS4-TTS · LAN' }, { id: 'video', icon: '▷', title: '视频创作', description: '文生、图生及首尾帧视频', detail: 'MINIMAX H3 · COMFYUI' }]
+const category = ref('image'), prompt = ref(''), style = ref(''), aspect = ref('21:9'), duration = ref(5), audioSpeed = ref(1), videoMode = ref('t2v'), history = ref([]), historyFilter = ref('image'), running = ref(false), preview = ref(''), firstPreview = ref(''), lastPreview = ref(''), firstPath = ref(''), lastPath = ref(''), voices = ref([]), selectedVoice = ref(''), voiceTab = ref('preset'), audioLanguage = ref('中文'), diffusionSteps = ref(25), temperature = ref(0.8), topP = ref(0.8), rawVoice = ref(null), rawDuration = ref(0), trimStart = ref(0), trimDuration = ref(10), clipPreview = ref(''), voiceUploading = ref(false), clipping = ref(false)
+const activeCategory = computed(() => categories.find(x => x.id === category.value) || categories[0])
+const filteredHistory = computed(() => historyFilter.value === 'all' ? history.value : history.value.filter(x => x.type === historyFilter.value))
+const selectedVoiceUrl = computed(() => voices.value.find(x => x.path === selectedVoice.value)?.url || '')
+const presetVoices = computed(() => voices.value.filter(x => x.kind === 'preset'))
+const customVoices = computed(() => voices.value.filter(x => x.kind === 'clip'))
+watch(voiceTab, async (tab) => { if (tab !== 'custom') return; await nextTick(); const host = document.querySelector('.voice-tabs + .voice-tab-body'); if (host) { [...host.children].forEach(el => { el.style.display = 'none' }); let mount = host.querySelector('.custom-audio-editor-mount'); if (!mount) { mount = document.createElement('div'); mount.className = 'custom-audio-editor-mount'; host.append(mount) } render(h(CustomAudioEditor, { savedVoices: customVoices.value, selectedPath: selectedVoice.value, onSelect: voice => { selectedVoice.value = voice.path }, onSaved: loadVoices }), mount) } })
+const canRun = computed(() => prompt.value.trim() && !(category.value === 'audio' && !selectedVoice.value) && !(category.value === 'video' && videoMode.value !== 't2v' && !firstPath.value) && !(category.value === 'video' && videoMode.value === 'f2v' && !lastPath.value))
+const placeholder = computed(() => ({ text: '例如：写一个 30 秒古风悬疑短剧开场，包含人物、冲突与三段分镜。', image: '例如：雨夜的成都老街，红灯笼倒映在青石板上，电影级构图。', audio: '输入需要朗读的台词或旁白。', video: '例如：镜头缓慢推进，一位侠客穿过雨雾中的古街。' }[category.value]))
+const videoModes = [{ id: 't2v', name: '文生视频' }, { id: 'i2v', name: '图生视频' }, { id: 'f2v', name: '首尾帧视频' }]
+function typeLabel(t) { return ({ text: '文本', image: '图片', audio: '音频', video: '视频' })[t] || t }
+function formatTime(v) { return v ? new Date(v).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }) : '' }
+function selectCategory(id) { category.value = id; historyFilter.value = id; prompt.value = '' }
+async function loadHistory() { try { const r = await freeCreateAPI.list({ limit: 80 }); history.value = Array.isArray(r) ? r : (r?.data || r?.items || []); } catch (e) { ElMessage.error('历史记录读取失败') } }
+async function loadVoices() { try { const r = await freeCreateAPI.voices(); voices.value = Array.isArray(r) ? r : (r?.data || []); if (!selectedVoice.value && voices.value[0]) selectedVoice.value = voices.value[0].path } catch (e) { ElMessage.error('音色预设读取失败') } }
+function pickVoice() { const input = document.createElement('input'); input.type = 'file'; input.accept = '.wav,.mp3,.m4a,.ogg,.webm,audio/*'; input.onchange = e => e.target.files?.[0] && uploadRawVoice(e.target.files[0]); input.click() }
+function dropVoice(e) { const f = e.dataTransfer?.files?.[0]; if (f) uploadRawVoice(f) }
+async function uploadRawVoice(file) { voiceUploading.value = true; try { rawVoice.value = await freeCreateAPI.uploadVoice(file); rawDuration.value = 0; trimStart.value = 0; trimDuration.value = 10; clipPreview.value = ''; const probe = new Audio(rawVoice.value.url); probe.onloadedmetadata = () => { rawDuration.value = Number.isFinite(probe.duration) ? probe.duration : 0; trimDuration.value = Math.min(10, Math.max(1, rawDuration.value || 10)); }; ElMessage.success('已上传，可试听并选择截取片段') } catch (_) {} finally { voiceUploading.value = false } }
+function clearRawVoice() { rawVoice.value = null; rawDuration.value = 0; trimStart.value = 0; clipPreview.value = '' }
+async function makeClip() { if (!rawVoice.value) return; clipping.value = true; try { let save = false, name = ''; try { await ElMessageBox.confirm('这个裁剪音色要保存到“我的音色”吗？不保存时，它只用于本次合成。', '保存音色', { confirmButtonText: '保存并命名', cancelButtonText: '仅本次使用', distinguishCancelAndClose: true, type: 'info' }); save = true; const r = await ElMessageBox.prompt('请输入音色名称', '为音色命名', { inputPlaceholder: '例如：旁白男声', inputValidator: v => v?.trim() ? true : '请输入名称' }); name = r.value.trim() } catch (e) { if (save && e !== 'cancel' && e !== 'close') return; save = false } const voice = await freeCreateAPI.trimVoice({ path: rawVoice.value.path, start: trimStart.value, duration: trimDuration.value, save, name }); if (voice.saved) voices.value.push(voice); selectedVoice.value = voice.path; clipPreview.value = voice.url; ElMessage.success(voice.saved ? '音色已保存，可试听并使用' : '本次音色已准备好，合成后会自动清理') } catch (_) {} finally { clipping.value = false } }
+async function upload(file, target) { const r = await uploadAPI.uploadImage(file); target.preview.value = URL.createObjectURL(file); target.path.value = r?.local_path || ''; if (!target.path.value) ElMessage.error('图片上传失败') }
+const setFirst = f => upload(f, { preview: firstPreview, path: firstPath }), setLast = f => upload(f, { preview: lastPreview, path: lastPath }); const clearFirst = () => { firstPreview.value=''; firstPath.value='' }, clearLast = () => { lastPreview.value=''; lastPath.value='' }
+async function run() { if (!canRun.value) return; running.value = true; try { if (category.value === 'text') { await freeCreateAPI.text({ prompt: prompt.value }); } else if (category.value === 'audio') { await freeCreateAPI.audio({ text: prompt.value, reference_path: selectedVoice.value, language: audioLanguage.value, temperature: temperature.value, top_p: topP.value, diffusion_steps: diffusionSteps.value }); } else if (category.value === 'image') { const r = await imagesAPI.create({ prompt: prompt.value, style: style.value || undefined, aspect_ratio: aspect.value }); if (r?.task_id) await waitTask(r.task_id); } else { const body = { prompt: prompt.value, style: style.value || undefined, aspect_ratio: aspect.value, duration: duration.value, model: 'MiniMax-H3-Local' }; if (videoMode.value !== 't2v') { body.first_frame_url = firstPath.value; body.image_url = '/static/' + firstPath.value; } if (videoMode.value === 'f2v') body.last_frame_url = lastPath.value; const r = await videosAPI.create(body); if (r?.task_id) await waitTask(r.task_id, 1800000); } await loadHistory(); ElMessage.success('已保存到本地历史库'); } catch (e) { ElMessage.error(e.message || '生成失败') } finally { running.value = false } }
+async function waitTask(id, timeout = 300000) { const start = Date.now(); while (Date.now() - start < timeout) { await new Promise(r => setTimeout(r, 2500)); const t = await taskAPI.get(id); if (t?.status === 'completed') return; if (t?.status === 'failed') throw new Error(t.error || '生成失败'); } throw new Error('任务超时') }
+async function copyText(v) { await navigator.clipboard.writeText(v); ElMessage.success('已复制') }
+function download(item) { const a = document.createElement('a'); a.href = item.url; a.download = `local_${item.type}_${item.id}`; a.click() }
+const UploadBox = defineComponent({ props: { title:String, url:String }, emits:['change','clear'], setup(props,{emit}) { const pick = () => { const i=document.createElement('input'); i.type='file'; i.accept='image/*'; i.onchange=e=>e.target.files?.[0]&&emit('change',e.target.files[0]); i.click() }; return () => h('button',{class:'upload-box',onClick:pick}, props.url ? [h('img',{src:props.url}),h('span',{class:'remove',onClick:e=>{e.stopPropagation();emit('clear')}},'×')] : [h('b','＋'),h('span',props.title),h('small','点击上传')]) } })
+onMounted(() => { loadHistory(); loadVoices() })
 </script>
 
 <style scoped>
-.free-create-page {
-  min-height: 100vh;
-  background: #f5f7fa;
-  padding: 20px;
-}
-
-.page-header {
-  margin-bottom: 20px;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 6px;
-}
-
-.page-title {
-  font-size: 22px;
-  font-weight: 600;
-  color: #1a1a2e;
-  margin: 0;
-}
-
-.page-desc {
-  color: #6b7280;
-  font-size: 14px;
-  margin: 0;
-}
-
-.create-layout {
-  display: flex;
-  gap: 20px;
-  align-items: flex-start;
-}
-
-.input-panel {
-  width: 380px;
-  flex-shrink: 0;
-  background: #fff;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.06);
-}
-
-.mode-tabs {
-  margin-bottom: 16px;
-}
-
-.form-section {
-  margin-bottom: 16px;
-}
-
-.form-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: #374151;
-  margin-bottom: 6px;
-}
-
-.required {
-  color: #ef4444;
-}
-
-.prompt-input :deep(.el-textarea__inner) {
-  font-size: 14px;
-}
-
-.form-row {
-  display: flex;
-  gap: 12px;
-}
-
-.form-item {
-  flex: 1;
-}
-
-.form-item .el-select {
-  width: 100%;
-}
-
-.ref-image-zone {
-  border: 2px dashed #d1d5db;
-  border-radius: 8px;
-  padding: 20px;
-  text-align: center;
-  cursor: pointer;
-  transition: border-color .2s;
-  min-height: 100px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  position: relative;
-}
-
-.ref-image-zone:hover {
-  border-color: #409eff;
-}
-
-.ref-preview {
-  max-width: 100%;
-  max-height: 150px;
-  border-radius: 6px;
-}
-
-.ref-actions {
-  margin-top: 8px;
-}
-
-.upload-icon {
-  font-size: 28px;
-  color: #9ca3af;
-}
-
-.upload-tip {
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.generate-btn {
-  width: 100%;
-  margin-top: 4px;
-}
-
-.result-panel {
-  flex: 1;
-  background: #fff;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.06);
-  min-height: 400px;
-}
-
-.result-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.result-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1a1a2e;
-}
-
-.empty-result {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 300px;
-  color: #9ca3af;
-  gap: 12px;
-}
-
-.empty-icon {
-  font-size: 48px;
-}
-
-.generating-tip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #409eff;
-  font-size: 14px;
-  margin-bottom: 12px;
-}
-
-.result-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
-}
-
-.result-item {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.result-media {
-  background: #f9fafb;
-  aspect-ratio: 16/9;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.result-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  cursor: zoom-in;
-}
-
-.result-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.media-loading,
-.media-error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  color: #6b7280;
-  font-size: 12px;
-}
-
-.media-error {
-  color: #ef4444;
-}
-
-.result-meta {
-  padding: 8px 10px;
-}
-
-.result-prompt {
-  font-size: 12px;
-  color: #6b7280;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.result-actions {
-  margin-top: 6px;
-  display: flex;
-  gap: 6px;
-}
-
-.image-preview-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.85);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: zoom-out;
-}
-
-.preview-img {
-  max-width: 90vw;
-  max-height: 90vh;
-  object-fit: contain;
-  border-radius: 8px;
-}
+.studio{min-height:100vh;background:#10151f;color:#e8edf7;padding:0 5vw 60px;font-family:Inter,"PingFang SC",sans-serif}.topbar{height:76px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #263142}.brand{font-size:18px;font-weight:750;letter-spacing:.3px;display:flex;align-items:center;gap:9px}.brand-dot{color:#7cf2c4;font-size:26px}.brand small{font-size:10px;color:#7f90a9;letter-spacing:1.4px;margin-left:5px}.top-actions :deep(.el-button){color:#b7c2d1}.workspace-shell{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:205px minmax(0,1fr);gap:24px;padding-top:30px}.mode-sidebar{position:sticky;top:20px;height:calc(100vh - 125px);min-height:530px;border-right:1px solid #2a3647;padding:16px 18px 18px 0;display:flex;flex-direction:column}.sidebar-title{padding:0 12px 22px;color:#dce6f2;font-weight:700}.sidebar-title small{display:block;color:#75879e;font-size:9px;letter-spacing:1.4px;margin-top:6px}.side-mode{border:0;background:transparent;color:#9bacc0;border-radius:10px;padding:13px 11px;display:flex;gap:11px;align-items:center;text-align:left;font-size:14px;cursor:pointer;margin-bottom:5px}.side-mode b{width:24px;text-align:center;color:#7b91aa;font-size:19px}.side-mode i{font-style:normal;margin-left:auto;font-size:19px;color:#6e8197}.side-mode:hover{background:#1a2635;color:#eef6ff}.side-mode.active{background:#243d3d;color:#7cf2c4}.side-mode.active b,.side-mode.active i{color:#7cf2c4}.sidebar-foot{margin-top:auto;padding:16px 12px;color:#6f8197;font-size:11px;line-height:1.8;border-top:1px solid #273344}.landing{max-width:1180px;margin:0 auto}.hero{padding:92px 0 48px;max-width:780px}.eyebrow{margin:0 0 10px;color:#7cf2c4;font-size:11px;font-weight:700;letter-spacing:1.7px}.hero h1,.workspace h1{font-size:48px;line-height:1.14;letter-spacing:-1.8px;margin:0 0 18px}.hero em{font-style:normal;color:#7cf2c4}.hero>p:last-child{font-size:17px;line-height:1.8;color:#99a8bc}.category-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.category-card{position:relative;min-height:255px;text-align:left;border:1px solid #2b3748;border-radius:18px;background:#17202d;color:#edf3fc;padding:25px;cursor:pointer;transition:.22s}.category-card:hover{transform:translateY(-5px);border-color:#7cf2c4;background:#1c2938}.card-icon{display:block;font-size:35px;color:#7cf2c4;margin-bottom:55px}.card-arrow{position:absolute;right:23px;top:22px;color:#7f90a9;font-size:21px}.category-card h2{margin:0 0 8px;font-size:20px}.category-card p{margin:0 0 18px;color:#aab7c9;line-height:1.55;font-size:13px}.category-card small{font-size:9px;color:#7890aa;letter-spacing:1px}.recent-strip{display:flex;gap:48px;margin-top:45px;padding:30px 0;border-top:1px solid #263142}.recent-strip h3{margin:0;font-size:21px}.recent-list{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;flex:1}.recent-list button{border:0;border-radius:8px;background:#182231;color:#bdc9d9;padding:10px;text-align:left;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}.recent-list b{font-size:11px;color:#7cf2c4;margin-right:10px}.recent-list span{font-size:12px}.workspace{min-width:0}.workspace-head{height:118px;display:flex;align-items:center;gap:18px}.workspace-head h1{font-size:31px;margin:0}.workspace-head .eyebrow{margin:0 0 5px}.head-spacer{flex:1}.workspace-grid{display:grid;grid-template-columns:minmax(390px,.86fr) minmax(460px,1.14fr);gap:18px}.editor-card,.history-card{background:#17202d;border:1px solid #2b3748;border-radius:18px;padding:27px}.editor-title{display:flex;gap:14px;align-items:center;margin-bottom:29px}.editor-title>span{width:44px;height:44px;display:grid;place-items:center;border-radius:12px;background:#263a3e;color:#7cf2c4;font-size:24px}.editor-title h2,.history-head h2{font-size:20px;margin:0 0 5px}.editor-title p{margin:0;color:#8fa0b5;font-size:12px}.editor-card label{display:block;font-size:12px;color:#b8c4d4;margin:17px 0 8px}.editor-card label i{color:#7cf2c4}.editor-card :deep(.el-textarea__inner),.editor-card :deep(.el-input__wrapper){background:#101722!important;box-shadow:0 0 0 1px #314054 inset!important;color:#eef4fc!important;-webkit-text-fill-color:#eef4fc!important}.editor-card :deep(input),.editor-card :deep(textarea),.editor-card :deep(.el-select__selected-item),.editor-card :deep(.el-input-number__decrease),.editor-card :deep(.el-input-number__increase){color:#eef4fc!important;-webkit-text-fill-color:#eef4fc!important}.editor-card :deep(input::placeholder),.editor-card :deep(textarea::placeholder){color:#73859c!important;-webkit-text-fill-color:#73859c!important;opacity:1}.editor-card :deep(.el-select){width:100%}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mode-row{display:flex;gap:7px;margin:18px 0}.mode-row button{border:1px solid #3a4b61;background:#111925;color:#aebdd0;border-radius:8px;padding:8px 10px;cursor:pointer;font-size:12px}.mode-row .selected{background:#7cf2c4;color:#10201d;border-color:#7cf2c4}.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.run{width:100%;height:46px;margin-top:25px;background:#7cf2c4!important;border-color:#7cf2c4!important;color:#10201d!important;font-weight:750}.run span{margin-left:10px;font-size:17px}.local-note{text-align:center;color:#7c91aa;font-size:11px;margin:13px 0 0}.history-head{display:flex;justify-content:space-between;align-items:start;border-bottom:1px solid #2c394b;padding-bottom:17px}.history-head :deep(.el-select){width:100px}.history-list{max-height:650px;overflow:auto;padding-right:5px}.history-item{padding:17px 0;border-bottom:1px solid #263243}.item-top{display:flex;justify-content:space-between}.item-top b{font-size:10px;border-radius:99px;padding:4px 8px;background:#263648;color:#b7c6d7}.item-top b.text{color:#a9c8ff}.item-top b.image{color:#ffce8b}.item-top b.audio{color:#d9a9ff}.item-top b.video{color:#7cf2c4}.item-top time{color:#718198;font-size:10px}.item-prompt{font-size:13px;color:#cbd5e1;line-height:1.5;margin:10px 0}.history-item pre{white-space:pre-wrap;max-height:190px;overflow:auto;border-radius:8px;background:#101722;padding:12px;color:#d5deed;font:12px/1.7 inherit}.history-item img,.history-item video{max-width:100%;max-height:220px;border-radius:8px;cursor:pointer}.history-item audio{width:100%}.item-status{font-size:12px;color:#93a4bb}.item-status.failed{color:#ff8d8d}.item-actions{display:flex;gap:8px;margin-top:4px}.empty{padding:60px 0;text-align:center;color:#74859c;font-size:13px}.lightbox{position:fixed;inset:0;background:#000c;display:grid;place-items:center;z-index:9;padding:40px}.lightbox img{max-width:90%;max-height:90%;border-radius:12px}.lightbox-close{position:fixed;right:34px;top:25px;width:44px;height:44px;border:1px solid #6f8094;border-radius:50%;background:#15202d;color:#fff;font-size:30px;line-height:36px;cursor:pointer;z-index:10}.lightbox-close:hover{background:#7cf2c4;color:#10201d;border-color:#7cf2c4}.upload-box{position:relative;min-height:108px;border:1px dashed #496077;border-radius:10px;background:#101722;color:#a8b9cc;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;cursor:pointer;font-size:12px}.upload-box b{font-size:21px;color:#7cf2c4}.upload-box small{color:#73859c}.upload-box img{width:100%;height:108px;object-fit:cover;border-radius:9px}.remove{position:absolute;right:6px;top:4px;background:#101722;color:#fff;border-radius:99px;width:20px;height:20px;font-size:16px}:global(.el-popper.is-pure),:global(.el-select__popper.el-popper){background:#17202d!important;border-color:#3a4c61!important}:global(.el-select-dropdown__item){color:#e8edf7!important}:global(.el-select-dropdown__item.hover),:global(.el-select-dropdown__item:hover){background:#263a3e!important;color:#7cf2c4!important}:global(.el-select-dropdown__item.is-selected){color:#7cf2c4!important;font-weight:700}@media(max-width:900px){.workspace-shell{display:block;padding-top:8px}.mode-sidebar{position:static;height:auto;min-height:0;border-right:0;border-bottom:1px solid #2a3647;padding:10px 0;display:grid;grid-template-columns:repeat(4,1fr)}.sidebar-title,.sidebar-foot{display:none}.side-mode{justify-content:center;padding:10px 4px}.side-mode span{display:none}.side-mode i{display:none}.workspace-grid{grid-template-columns:1fr}.hero h1{font-size:36px}.recent-strip{display:block}.recent-list{margin-top:20px}.studio{padding:0 20px 40px}}
+.voice-head{display:flex;align-items:center;justify-content:space-between;margin-top:15px}.voice-head label{margin:0!important}.upload-voice,.make-clip{border:1px solid #4a6673;background:#1a2c34;color:#7cf2c4;border-radius:7px;padding:6px 9px;cursor:pointer;font-size:11px}.upload-voice:disabled,.make-clip:disabled{opacity:.6;cursor:wait}.voice-tip{margin:8px 0 10px;color:#8092a7;font-size:11px;line-height:1.5}.trim-panel{border:1px solid #3a5667;background:#121f2a;border-radius:10px;padding:12px;margin:10px 0 14px}.trim-title{display:flex;justify-content:space-between;gap:8px;color:#cbd8e8;font-size:12px;margin-bottom:8px}.trim-title span{color:#8193a8;font-size:11px}.trim-panel audio{width:100%}.trim-row{margin-top:8px}.trim-row label{margin:0 0 2px!important;font-size:11px!important}.trim-row label i{font-style:normal;color:#7cf2c4}.make-clip{margin-top:7px;width:100%;background:#7cf2c4;color:#10201d;font-weight:700;border-color:#7cf2c4}.clip-preview{margin-top:8px}.voice-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.voice-card{min-height:52px;position:relative;text-align:left;border:1px solid #33465b;background:#101722;color:#d9e3f0;border-radius:8px;padding:9px;cursor:pointer}.voice-card:hover,.voice-card.selected{border-color:#7cf2c4;background:#1d3437}.voice-card b{display:block;color:#8097ae;font-size:9px;margin-bottom:4px}.voice-card.selected b,.voice-card i{color:#7cf2c4}.voice-card span{font-size:12px}.voice-card i{position:absolute;right:9px;top:15px;font-style:normal}.voice-empty{grid-column:1/-1;padding:18px;text-align:center;color:#73859c;font-size:12px;border:1px dashed #3b5266;border-radius:8px}.voice-preview{width:100%;margin-top:12px}.advanced-panel{margin-top:15px;border-top:1px solid #304255;padding-top:12px}.advanced-panel summary{cursor:pointer;color:#b9c8d9;font-size:12px;list-style:none}.advanced-panel summary span{float:right;color:#7cf2c4}.advanced-panel[open] summary span{transform:rotate(180deg);display:inline-block}.audio-advanced{display:grid;grid-template-columns:116px 1fr;gap:8px 12px;align-items:center;margin-top:12px}.audio-advanced label{margin:0!important}.audio-advanced :deep(.el-select){width:100%}.audio-advanced :deep(.el-slider){padding-left:8px}
+.voice-status{font-size:10px;color:#7cf2c4;border:1px solid #3a5960;border-radius:99px;padding:4px 8px}.voice-tabs{display:flex;border-bottom:1px solid #334354;margin-top:12px}.voice-tabs button{background:transparent;border:0;color:#8294a9;padding:10px 16px;cursor:pointer;font-size:13px}.voice-tabs button.active{color:#7cf2c4;border-bottom:2px solid #7cf2c4}.voice-tab-body{padding-top:10px}.audio-dropzone{min-height:245px;border:1px dashed #506075;border-radius:8px;background:#121720;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:9px;cursor:pointer;color:#d6e0ee;transition:.2s}.audio-dropzone:hover,.audio-dropzone.uploading{border-color:#7cf2c4;background:#16242a}.audio-dropzone .upload-mark{font-size:38px;color:#d8e1ec;line-height:1}.audio-dropzone b{font-size:17px;font-weight:600}.audio-dropzone span{color:#91a0b4;font-size:13px}.audio-dropzone strong{font-size:16px;color:#e8edf7}.audio-dropzone small{color:#71849b;font-size:10px;margin-top:8px}.audio-container{position:relative;border:1px solid #414b59;border-radius:8px;background:#202126;padding:38px 13px 14px;margin-top:8px}.audio-label{position:absolute;top:0;left:0;border-right:1px solid #414b59;border-bottom:1px solid #414b59;border-radius:7px 0 7px 0;padding:10px 14px;color:#eef4ff;font-size:13px}.audio-close{position:absolute;right:8px;top:7px;border:0;background:transparent;color:#dfe8f4;font-size:29px;cursor:pointer}.waveform{height:82px;margin:6px 8px 10px;background:repeating-linear-gradient(90deg,transparent 0 5px,#a9b3c4 6px 8px,transparent 9px 13px),linear-gradient(180deg,transparent 25%,#697689 26% 28%,transparent 29% 45%,#9faabd 46% 55%,transparent 56% 72%,#6a778a 73% 75%,transparent 76%);border-radius:4px;opacity:.9}.audio-time{display:flex;justify-content:space-between;color:#aac5ec;font-size:12px;margin:0 8px 8px}.audio-container>audio{width:100%}.audio-container .trim-panel{margin:13px 0 0}.saved-voices{border-top:1px solid #304155;margin-top:14px;padding-top:10px}.saved-voices>small{display:block;color:#8798ad;font-size:11px;margin-bottom:8px}.selected-audio{display:flex;align-items:center;gap:12px;border:1px solid #35505c;border-radius:8px;background:#142129;padding:8px 10px;margin-top:12px}.selected-audio span{font-size:11px;color:#7cf2c4;white-space:nowrap}.selected-audio audio{width:100%;height:30px}
 </style>

@@ -194,11 +194,6 @@
           </div>
         </div>
       </el-tab-pane>
-      <el-tab-pane label="SD2 资产管理" name="sd2_assets">
-        <div class="tab-content">
-          <Sd2AssetManagement :configs="list" @saved="loadList" />
-        </div>
-      </el-tab-pane>
     </el-tabs>
 
     <!-- 添加/编辑 -->
@@ -1102,7 +1097,6 @@ import { aiAPI } from '@/api/ai'
 import { generationSettingsAPI } from '@/api/prompts'
 import PromptEditor from '@/components/PromptEditor.vue'
 import SceneModelMap from '@/components/SceneModelMap.vue'
-import Sd2AssetManagement from '@/components/Sd2AssetManagement.vue'
 
 const activeTab = ref('configs')
 const importFileRef = ref(null)
@@ -1715,14 +1709,7 @@ function serviceTypeLabel(t) {
   return map[t] || t
 }
 
-function onRowEdit(row) {
-  if (row.service_type === 'model_ark_asset') {
-    activeTab.value = 'sd2_assets'
-    ElMessage.info('请在「SD2 资产管理」标签页编辑此配置')
-    return
-  }
-  openEdit(row)
-}
+function onRowEdit(row) { openEdit(row) }
 
 async function loadList() {
   loading.value = true

@@ -52,7 +52,13 @@ function listConfigs(db, serviceType) {
     params.push(serviceType);
   }
   const rows = params.length ? db.prepare(sql).all(...params) : db.prepare(sql).all();
-  return rows.map(rowToConfig);
+  const configs = rows.map(rowToConfig);
+  // Offline deployments must never silently fall back to a paid cloud provider.
+  // Set LOCAL_ONLY=1 in the service environment to expose local_* providers only.
+  if (process.env.LOCAL_ONLY === '1') {
+    return configs.filter((config) => String(config.provider || '').toLowerCase().startsWith('local_'));
+  }
+  return configs;
 }
 
 function clearOtherDefault(db, serviceType, exceptId) {

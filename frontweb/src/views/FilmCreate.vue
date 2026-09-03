@@ -2740,7 +2740,7 @@ const isStoryGenRunning = computed(() => {
 })
 const generationStyle = ref('')
 const customStylePrompt = ref('')
-const projectAspectRatio = ref('16:9')
+const projectAspectRatio = ref('21:9')
 const videoClipDuration = ref(5)
 
 /** 根据 value 查找样式选项对象 */
